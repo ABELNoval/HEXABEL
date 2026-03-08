@@ -1,140 +1,57 @@
-# board.py - Utilidades para el tablero de Hex
-"""
-Módulo con funciones auxiliares para manipulación y análisis del tablero Hex.
-"""
+class HexBoard:
+    HEX_DIRECTIONS = [
+        (-1, 0),
+        (-1, 1),
+        (0, -1),
+        (0, 1),
+        (1, -1),
+        (1, 0),
+    ]
 
-from typing import List, Tuple, Set
-from collections import deque
+    def __init__(self, size: int):
+        self.size = size
+        self.board = [
+            [0 for _ in range(size)] for _ in range(size)
+        ]  # 0 = vacío, 1 = jugador1, 2 = jugador2
 
+    def clone(self):
+        new_board = HexBoard(self.size)
+        new_board.board = [row[:] for row in self.board]
+        return new_board
 
-def get_neighbors(row: int, col: int, board_size: int) -> List[Tuple[int, int]]:
-    """
-    Obtiene los vecinos válidos de una celda en el tablero hexagonal.
+    def place_piece(self, row: int, col: int, player_id: int) -> bool:
+        if self.board[row][col] != 0:
+            return False
+        self.board[row][col] = player_id
+        return True
 
-    En Hex, cada celda tiene hasta 6 vecinos:
-    - (row-1, col), (row-1, col+1)
-    - (row, col-1), (row, col+1)
-    - (row+1, col-1), (row+1, col)
+    def check_connection(self, player_id: int) -> bool:
+        visited = [[False for _ in range(self.size)] for _ in range(self.size)]
 
-    Args:
-        row: Fila de la celda
-        col: Columna de la celda
-        board_size: Tamaño del tablero
+        def dfs(r, c):
+            if visited[r][c] or self.board[r][c] != player_id:
+                return False
+            visited[r][c] = True
 
-    Returns:
-        Lista de tuplas (fila, columna) de vecinos válidos
-    """
-    # TODO: Implementar obtención de vecinos hexagonales
-    directions = [(-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0)]
-    neighbors = []
-    # TODO: Filtrar vecinos dentro del tablero
-    raise NotImplementedError("Implementar get_neighbors")
+            # Lados de victoria
+            if player_id == 1 and c == self.size - 1:  # jugador 1: izquierda -> derecha
+                return True
+            if player_id == 2 and r == self.size - 1:  # jugador 2: arriba -> abajo
+                return True
 
+            for dr, dc in self.HEX_DIRECTIONS:
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < self.size and 0 <= nc < self.size:
+                    if dfs(nr, nc):
+                        return True
+            return False
 
-def is_valid_position(row: int, col: int, board_size: int) -> bool:
-    """
-    Verifica si una posición está dentro del tablero.
-
-    Args:
-        row: Fila
-        col: Columna
-        board_size: Tamaño del tablero
-
-    Returns:
-        bool: True si la posición es válida
-    """
-    # TODO: Implementar validación de posición
-    raise NotImplementedError("Implementar is_valid_position")
-
-
-def get_empty_cells(board: List[List[int]]) -> List[Tuple[int, int]]:
-    """
-    Obtiene todas las celdas vacías del tablero.
-
-    Args:
-        board: Matriz del tablero
-
-    Returns:
-        Lista de tuplas (fila, columna) de celdas vacías
-    """
-    # TODO: Implementar búsqueda de celdas vacías
-    raise NotImplementedError("Implementar get_empty_cells")
-
-
-def copy_board(board: List[List[int]]) -> List[List[int]]:
-    """
-    Crea una copia profunda del tablero.
-
-    Args:
-        board: Tablero original
-
-    Returns:
-        Copia del tablero
-    """
-    # TODO: Implementar copia del tablero
-    raise NotImplementedError("Implementar copy_board")
-
-
-def make_move(
-    board: List[List[int]], row: int, col: int, player: int
-) -> List[List[int]]:
-    """
-    Realiza un movimiento en el tablero (retorna nueva copia).
-
-    Args:
-        board: Tablero actual
-        row: Fila del movimiento
-        col: Columna del movimiento
-        player: Jugador que realiza el movimiento (1 o 2)
-
-    Returns:
-        Nuevo tablero con el movimiento aplicado
-    """
-    # TODO: Implementar aplicación de movimiento
-    raise NotImplementedError("Implementar make_move")
-
-
-def check_connection(board: List[List[int]], player: int) -> bool:
-    """
-    Verifica si un jugador ha ganado (conexión de lado a lado).
-
-    - Jugador 1: Conecta arriba con abajo (filas)
-    - Jugador 2: Conecta izquierda con derecha (columnas)
-
-    Args:
-        board: Estado del tablero
-        player: Jugador a verificar (1 o 2)
-
-    Returns:
-        bool: True si el jugador ha ganado
-    """
-    # TODO: Implementar BFS/DFS para verificar conexión
-    raise NotImplementedError("Implementar check_connection")
-
-
-def shortest_path_distance(board: List[List[int]], player: int) -> int:
-    """
-    Calcula la distancia del camino más corto para completar la conexión.
-    Útil para la función de evaluación heurística.
-
-    Args:
-        board: Estado del tablero
-        player: Jugador a evaluar
-
-    Returns:
-        int: Distancia mínima (número de celdas vacías necesarias)
-             Retorna 0 si ya ganó, infinito si es imposible
-    """
-    # TODO: Implementar Dijkstra o BFS para camino más corto
-    raise NotImplementedError("Implementar shortest_path_distance")
-
-
-def print_board(board: List[List[int]]) -> None:
-    """
-    Imprime el tablero de forma visual (hexagonal).
-
-    Args:
-        board: Tablero a imprimir
-    """
-    # TODO: Implementar visualización del tablero
-    raise NotImplementedError("Implementar print_board")
+        if player_id == 1:  # jugador 1: izquierda -> derecha
+            for r in range(self.size):
+                if self.board[r][0] == player_id and dfs(r, 0):
+                    return True
+        else:  # jugador 2: arriba -> abajo
+            for c in range(self.size):
+                if self.board[0][c] == player_id and dfs(0, c):
+                    return True
+        return False
