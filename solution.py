@@ -1,58 +1,31 @@
-# solution.py - Archivo de solución final obligatorio
-"""
-Archivo principal que exporta la clase HexPlayer.
-Este es el archivo que será evaluado por el sistema de competencia.
-
-Uso:
-    from solution import HexPlayer
-    player = HexPlayer(color=1)
-    move = player.play(board)
-"""
-
 from player import Player
-from board import check_connection, get_neighbors, shortest_path_distance
+from board import HexBoard
+import random
 
 
-class HexPlayer:
-    """
-    Clase principal del jugador de Hex para la competencia.
+class SmartPlayer(Player):
+    def __init__(self, player_id: int):
+        super().__init__(player_id)
 
-    Interfaz requerida por el sistema de evaluación.
-    """
-
-    def __init__(self, color: int):
+    def play(self, board: HexBoard) -> tuple:
         """
-        Inicializa el jugador.
-
-        Args:
-            color: Color asignado al jugador (1 o 2)
-                   - 1: Conecta Norte-Sur (filas)
-                   - 2: Conecta Este-Oeste (columnas)
+        Decide la jugada a realizar.
+        Por ahora: selecciona una celda vacía aleatoria.
         """
-        self.color = color
-        self.player = Player(color)
 
-    def play(self, board: list) -> tuple:
-        """
-        Método principal llamado por el sistema para obtener el movimiento.
+        size = board.size
+        grid = board.board
 
-        Args:
-            board: Matriz NxN representando el estado del tablero.
-                   - 0: Celda vacía
-                   - 1: Ficha del jugador 1
-                   - 2: Ficha del jugador 2
+        # Generar lista de movimientos válidos
+        moves = []
+        for r in range(size):
+            for c in range(size):
+                if grid[r][c] == 0:
+                    moves.append((r, c))
 
-        Returns:
-            tuple: (fila, columna) del movimiento elegido.
-                   Debe ser una celda vacía válida.
+        # Devolver un movimiento válido aleatorio
+        if moves:
+            return random.choice(moves)
 
-        Raises:
-            Exception: Si no puede determinar un movimiento válido.
-        """
-        # TODO: Implementar lógica de juego
-        # Delegar al módulo player
-        return self.player.get_move(board)
-
-
-# Alias para compatibilidad
-Player = HexPlayer
+        # Si no hay movimientos, devolver None (no debería pasar)
+        return None
