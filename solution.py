@@ -120,7 +120,7 @@ class SmartPlayer(Player):
             if self.check_timeout():
                 raise TimeoutError()
 
-            # Fix 6: Backtracking (Avoid clone)
+            # Apply move (Backtracking)
             board.board[move[0]][move[1]] = self.player_id
 
             try:
@@ -217,7 +217,7 @@ class SmartPlayer(Player):
                     for dr, dc in board.HEX_DIRECTIONS:
                         nr, nc = move[0] + dr, move[1] + dc
                         if 0 <= nr < board.size and 0 <= nc < board.size:
-                            # Fix 4: Check if ANY piece is neighbor (tactical/blocking)
+                            # Check if ANY piece is neighbor (tactical/blocking)
                             if board.board[nr][nc] != 0:
                                 is_promising = True
                                 break
@@ -225,14 +225,14 @@ class SmartPlayer(Player):
                     if not is_promising:
                         do_lmr = True
 
-                # Fix 6: Backtracking (Avoid clone)
+                # Apply move (Backtracking)
                 board.board[move[0]][move[1]] = self.player_id
 
                 val = float("-inf")
                 if do_lmr:
                     # Reduced search
                     val = self.minimax(board, depth - 2, False, alpha, beta)
-                    # Fix 3: Re-search if result improves alpha (found better move than expected)
+                    # Re-search if result improves alpha (found better move than expected)
                     if val > alpha:
                         val = self.minimax(board, depth - 1, False, alpha, beta)
                 else:
@@ -264,13 +264,13 @@ class SmartPlayer(Player):
                     if not is_promising:
                         do_lmr = True
 
-                # Fix 6: Backtracking
+                # Apply move (Backtracking)
                 board.board[move[0]][move[1]] = opponent
 
                 val = float("inf")
                 if do_lmr:
                     val = self.minimax(board, depth - 2, True, alpha, beta)
-                    # Fix 3: Re-search if result improves beta (found better move for minimizer)
+                    # Re-search if result improves beta (found better move for minimizer)
                     if val < beta:
                         val = self.minimax(board, depth - 1, True, alpha, beta)
                 else:
@@ -407,7 +407,7 @@ class SmartPlayer(Player):
 
     def evaluate_board(self, board: HexBoard) -> float:
         """
-        Advanced Heuristic (Fase 3): Two-Path Robustness
+        Advanced Heuristic: Two-Path Robustness
         Instead of just one path, we evaluate the cost of a secondary disjoint path.
         Formula: (Opponent_Path1 + Opponent_Path2) - (My_Path1 + My_Path2)
         """
