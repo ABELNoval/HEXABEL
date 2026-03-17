@@ -11,6 +11,9 @@ class SmartPlayer(Player):
         self.start_time = 0
         self.timeout = False
         self.transposition_table = {}  # TT: Stores board analysis to prune search tree
+        self.killer_moves = [
+            [None] * 2 for _ in range(100)
+        ]  # Killer Moves: [depth][slot]
 
     def play(self, board: HexBoard) -> tuple:
         """
@@ -23,6 +26,9 @@ class SmartPlayer(Player):
         # Reset TT for each turn to avoid memory overflow in long matches
         # and to clear stale positions from previous game stages
         self.transposition_table.clear()
+
+        # Reset Killer Moves
+        self.killer_moves = [[None] * 2 for _ in range(100)]
 
         # Check if we must block an immediate opponent win
         opponent_id = 3 - self.player_id
@@ -44,6 +50,9 @@ class SmartPlayer(Player):
 
         # --- Iterative Deepening Search ---
         max_depth = 1
+        search_board = (
+            board.clone()
+        )  # Clone once for search to allow in-place modification
 
         while True:
             try:
@@ -51,7 +60,7 @@ class SmartPlayer(Player):
                     break
 
                 current_best_move, current_val = self.search_root(
-                    board, max_depth, possible_moves
+                    search_board, max_depth, possible_moves
                 )
 
                 best_move = current_best_move
@@ -111,10 +120,19 @@ class SmartPlayer(Player):
             if self.check_timeout():
                 raise TimeoutError()
 
-            sim_board = board.clone()
-            sim_board.place_piece(move[0], move[1], self.player_id)
+            # Fix 6: Backtracking (Avoid clone)
+            board.board[move[0]][move[1]] = self.player_id
 
-            val = self.minimax(sim_board, depth - 1, False, alpha, beta)
+            try:
+                val = self.minimax(board, depth - 1, False, alpha, beta)
+            except TimeoutError:
+                # Ensure we undo even on timeout if caught here,
+                # though usually timeout propagates.
+                # But to be safe for state consistency:
+                board.board[move[0]][move[1]] = 0
+                raise
+
+            board.board[move[0]][move[1]] = 0  # Undo
 
             if val > best_val:
                 best_val = val
@@ -142,7 +160,7 @@ class SmartPlayer(Player):
             raise TimeoutError()
 
         # --- Transposition Table Lookup ---
-        board_hash = self.get_board_hash(board)
+        board_hash = self.get_board_hash(board, maximizing_player)
         if board_hash in self.transposition_table:
             t_depth, t_flag, t_val = self.transposition_table[board_hash]
             if t_depth >= depth:
@@ -176,27 +194,96 @@ class SmartPlayer(Player):
         # Order moves (optional here, might be too costly)
         # moves = self.order_moves(board, moves)
 
+        if depth < 100:
+            killers = self.killer_moves[depth]
+            # Efficiently move killers to front if valid
+            # In Python, sorting is O(N log N), but N is small (relevant moves ~10-20).
+            # We use a key to push killers to the top.
+            valid_killers = [k for k in killers if k in moves]
+            # Use a set for faster lookup in filtering
+            vk_set = set(valid_killers)
+            other_moves = [m for m in moves if m not in vk_set]
+            moves = valid_killers + other_moves
+
         alpha_original = alpha
         best_val = float("-inf") if maximizing_player else float("inf")
 
         if maximizing_player:
-            for move in moves:
-                sim_board = board.clone()
-                sim_board.place_piece(move[0], move[1], self.player_id)
-                eval = self.minimax(sim_board, depth - 1, False, alpha, beta)
-                best_val = max(best_val, eval)
-                alpha = max(alpha, eval)
+            for i, move in enumerate(moves):
+                # --- Late Move Reduction (LMR) ---
+                do_lmr = False
+                if depth > 3 and i > 4 and best_val > float("-inf"):
+                    is_promising = False
+                    for dr, dc in board.HEX_DIRECTIONS:
+                        nr, nc = move[0] + dr, move[1] + dc
+                        if 0 <= nr < board.size and 0 <= nc < board.size:
+                            # Fix 4: Check if ANY piece is neighbor (tactical/blocking)
+                            if board.board[nr][nc] != 0:
+                                is_promising = True
+                                break
+
+                    if not is_promising:
+                        do_lmr = True
+
+                # Fix 6: Backtracking (Avoid clone)
+                board.board[move[0]][move[1]] = self.player_id
+
+                val = float("-inf")
+                if do_lmr:
+                    # Reduced search
+                    val = self.minimax(board, depth - 2, False, alpha, beta)
+                    # Fix 3: Re-search if result improves alpha (found better move than expected)
+                    if val > alpha:
+                        val = self.minimax(board, depth - 1, False, alpha, beta)
+                else:
+                    val = self.minimax(board, depth - 1, False, alpha, beta)
+
+                board.board[move[0]][move[1]] = 0  # Undo
+
+                if val > best_val:
+                    best_val = val
+                alpha = max(alpha, best_val)
                 if beta <= alpha:
+                    if depth < 100:
+                        self.store_killer_move(depth, move)
                     break
         else:
             opponent = 3 - self.player_id
-            for move in moves:
-                sim_board = board.clone()
-                sim_board.place_piece(move[0], move[1], opponent)
-                eval = self.minimax(sim_board, depth - 1, True, alpha, beta)
-                best_val = min(best_val, eval)
-                beta = min(beta, eval)
+            for i, move in enumerate(moves):
+                # --- Late Move Reduction (LMR) ---
+                do_lmr = False
+                if depth > 3 and i > 4 and best_val < float("inf"):
+                    is_promising = False
+                    for dr, dc in board.HEX_DIRECTIONS:
+                        nr, nc = move[0] + dr, move[1] + dc
+                        if 0 <= nr < board.size and 0 <= nc < board.size:
+                            if board.board[nr][nc] != 0:
+                                is_promising = True
+                                break
+
+                    if not is_promising:
+                        do_lmr = True
+
+                # Fix 6: Backtracking
+                board.board[move[0]][move[1]] = opponent
+
+                val = float("inf")
+                if do_lmr:
+                    val = self.minimax(board, depth - 2, True, alpha, beta)
+                    # Fix 3: Re-search if result improves beta (found better move for minimizer)
+                    if val < beta:
+                        val = self.minimax(board, depth - 1, True, alpha, beta)
+                else:
+                    val = self.minimax(board, depth - 1, True, alpha, beta)
+
+                board.board[move[0]][move[1]] = 0  # Undo
+
+                if val < best_val:
+                    best_val = val
+                beta = min(beta, best_val)
                 if beta <= alpha:
+                    if depth < 100:
+                        self.store_killer_move(depth, move)
                     break
 
         # --- Transposition Table Store ---
@@ -210,10 +297,16 @@ class SmartPlayer(Player):
 
         return best_val
 
-    def get_board_hash(self, board: HexBoard):
+    def store_killer_move(self, depth, move):
+        # Shift killers: [1] becomes old [0], [0] becomes new move
+        if self.killer_moves[depth][0] != move:
+            self.killer_moves[depth][1] = self.killer_moves[depth][0]
+            self.killer_moves[depth][0] = move
+
+    def get_board_hash(self, board: HexBoard, maximizing_player: bool):
         """Creates a unique hashable representation of the board state."""
-        # Convert mutable list of lists to immutable tuple of tuples
-        return tuple(tuple(row) for row in board.board)
+        # Convert mutable list of lists to immutable tuple of tuples, and include player turn
+        return (tuple(tuple(row) for row in board.board), maximizing_player)
 
     def get_relevant_moves(self, board: HexBoard):
         """
