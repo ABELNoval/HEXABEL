@@ -1,6 +1,7 @@
 from player import Player
 from board import HexBoard
 import random
+import heapq
 
 
 class SmartPlayer(Player):
@@ -50,10 +51,10 @@ class SmartPlayer(Player):
     ) -> float:
         # Check terminal states (Win/Loss)
         if board.check_connection(self.player_id):
-            return 1000.0
+            return 10000.0
         opponent = 3 - self.player_id
         if board.check_connection(opponent):
-            return -1000.0
+            return -10000.0
 
         # If max depth reached or no moves left, evaluate heuristically
         if depth == 0 or not self.get_possible_moves(board):
@@ -87,28 +88,76 @@ class SmartPlayer(Player):
 
     def evaluate_board(self, board: HexBoard) -> float:
         """
-        Basic heuristic to evaluate board state.
-        Strategy: Centrality.
+        Dijkstra-based heuristic:
+        Returns: opponent_distance - my_distance
         """
-        score = random.uniform(0, 0.1)  # Small random factor to break ties
-        center = board.size // 2
+        my_dist = self.calculate_distance(board, self.player_id)
+        opponent_id = 3 - self.player_id
+        op_dist = self.calculate_distance(board, opponent_id)
 
-        for r in range(board.size):
-            for c in range(board.size):
-                cell = board.board[r][c]
-                if cell == 0:
-                    continue
+        return op_dist - my_dist
 
-                # Value proximity to center
-                dist = abs(r - center) + abs(c - center)
-                val = max(1, board.size - dist)
+    def calculate_distance(self, board: HexBoard, player_id: int) -> float:
+        """
+        Calculates the shortest path distance to connect the player's sides.
+        Weights:
+        - Own cell: 0
+        - Empty cell: 1
+        - Opponent cell: 100 (high cost but passable)
+        """
+        size = board.size
+        # Priority Queue: (cost, r, c)
+        pq = []
+        # Min Distances Matrix initialized to infinity
+        dists = [[float("inf") for _ in range(size)] for _ in range(size)]
 
-                if cell == self.player_id:
-                    score += val
-                else:
-                    score -= val  # Subtract points for opponent positions
+        # Directions for neighbors
+        directions = board.HEX_DIRECTIONS
 
-        return score
+        # Initialize PQ with starting edge cells
+        if player_id == 1:  # Left to Right (Start at Col 0)
+            for r in range(size):
+                cost = self.get_cell_cost(board.board[r][0], player_id)
+                dists[r][0] = cost
+                heapq.heappush(pq, (cost, r, 0))
+        else:  # Top to Bottom (Start at Row 0)
+            for c in range(size):
+                cost = self.get_cell_cost(board.board[0][c], player_id)
+                dists[0][c] = cost
+                heapq.heappush(pq, (cost, 0, c))
+
+        while pq:
+            current_cost, r, c = heapq.heappop(pq)
+
+            # If we found a shorter path before, ignore
+            if current_cost > dists[r][c]:
+                continue
+
+            # Check if we reached the target edge
+            if player_id == 1 and c == size - 1:
+                return current_cost
+            if player_id == 2 and r == size - 1:
+                return current_cost
+
+            # Explore neighbors
+            for dr, dc in directions:
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < size and 0 <= nc < size:
+                    move_cost = self.get_cell_cost(board.board[nr][nc], player_id)
+                    new_cost = current_cost + move_cost
+                    if new_cost < dists[nr][nc]:
+                        dists[nr][nc] = new_cost
+                        heapq.heappush(pq, (new_cost, nr, nc))
+
+        return float("inf")
+
+    def get_cell_cost(self, cell_value: int, player_id: int) -> int:
+        if cell_value == player_id:
+            return 0
+        elif cell_value == 0:
+            return 1
+        else:
+            return 100  # High cost for opponent cells
 
     def get_possible_moves(self, board: HexBoard):
         """Returns a list of all empty cells (r, c)"""
