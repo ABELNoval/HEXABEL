@@ -7,36 +7,43 @@ import heapq
 class SmartPlayer(Player):
     def __init__(self, player_id: int):
         super().__init__(player_id)
-        # Time control configuration
-        self.max_time = 4.8  # Seconds (0.2s margin for the 5s limit)
+        self.max_time = 4.8
         self.start_time = 0
         self.timeout = False
 
     def play(self, board: HexBoard) -> tuple:
         """
-        Decides the move using Minimax with Iterative Deepening Alpha-Beta pruning.
-        Includes Time Control, Move Reduction, and Ordering.
+        Executes the game strategy using Minimax with Iterative Deepening,
+        Alpha-Beta Pruning, and strategic Move Ordering.
         """
         self.start_time = time.time()
         self.timeout = False
 
-        # 1. Move Reduction (Get only relevant moves)
-        possible_moves = self.get_relevant_moves(board)
+        # --- Immediate Move Analysis ---
+        # Check for immediate winning or blocking moves to avoid unnecessary search.
+        winning_move = self.find_immediate_win(board, self.player_id)
+        if winning_move:
+            return winning_move
 
+        # Check if we must block an immediate opponent win
+        opponent_id = 3 - self.player_id
+        blocking_move = self.find_immediate_win(board, opponent_id)
+
+        # --- Move Generation & Reduction ---
+        possible_moves = self.get_relevant_moves(board)
         if not possible_moves:
-            # Fallback: try all empty cells if no relevant moves found
             possible_moves = self.get_possible_moves(board)
 
         if not possible_moves:
             return None
 
-        # 2. Initial Ordering (Simple Heuristic)
-        # Order moves to improve Alpha-Beta pruning efficiency
-        possible_moves = self.order_moves(board, possible_moves)
+        # --- Move Ordering ---
+        # Prioritize blocking move if found to guide the search
+        possible_moves = self.order_moves(board, possible_moves, blocking_move)
 
         best_move = possible_moves[0]
 
-        # 3. Iterative Deepening (Progressive depth until time runs out)
+        # --- Iterative Deepening Search ---
         max_depth = 1
 
         while True:
@@ -44,15 +51,17 @@ class SmartPlayer(Player):
                 if self.check_timeout():
                     break
 
-                # Search with current depth
                 current_best_move, current_val = self.search_root(
                     board, max_depth, possible_moves
                 )
 
-                # Update best move if search completed
                 best_move = current_best_move
 
-                # Stop if max possible depth reached
+                # --- Early Termination ---
+                # If a forced win is detected (high score), terminate search early.
+                if current_val >= 9000.0:
+                    break
+
                 if max_depth >= board.size * board.size:
                     break
 
@@ -63,6 +72,30 @@ class SmartPlayer(Player):
 
         return best_move
 
+    def find_immediate_win(self, board: HexBoard, player_id: int):
+        """Checks if placing a piece in any valid spot creates a connection."""
+        empty_cells = []
+        for r in range(board.size):
+            for c in range(board.size):
+                if board.board[r][c] == 0:
+                    empty_cells.append(
+                        (r, c)
+                    )  # Could optimize using get_relevant_moves
+
+        # Optimization: Only check relevant empty cells if board is large
+        # For 7x7, checking all empties is fast enough.
+
+        for r, c in empty_cells:
+            # We don't clone the board fully to speed up;
+            # we place, check, and unplace (backtrack).
+            board.board[r][c] = player_id
+            if board.check_connection(player_id):
+                board.board[r][c] = 0  # Undo
+                return (r, c)
+            board.board[r][c] = 0  # Undo
+
+        return None
+
     def check_timeout(self):
         if time.time() - self.start_time > self.max_time:
             self.timeout = True
@@ -70,7 +103,6 @@ class SmartPlayer(Player):
         return False
 
     def search_root(self, board: HexBoard, depth: int, ordered_moves: list):
-        """Root of Minimax to handle the returned move"""
         best_val = float("-inf")
         best_move = ordered_moves[0]
         alpha = float("-inf")
@@ -83,12 +115,16 @@ class SmartPlayer(Player):
             sim_board = board.clone()
             sim_board.place_piece(move[0], move[1], self.player_id)
 
-            # Call minimax with reduced depth
             val = self.minimax(sim_board, depth - 1, False, alpha, beta)
 
             if val > best_val:
                 best_val = val
                 best_move = move
+
+            # --- EARLY PRUNING AT ROOT ---
+            # If we find a winning move at root (depth 1 of this iteration), take it.
+            if val >= 9000.0:
+                return move, val
 
             alpha = max(alpha, best_val)
 
@@ -153,9 +189,8 @@ class SmartPlayer(Player):
 
     def get_relevant_moves(self, board: HexBoard):
         """
-        Move Reduction Strategy.
-        Considers only empty neighbors of existing pieces (distance 1).
-        If board is empty, returns the center.
+        Generates a reduced set of candidate moves based on adjacency to existing pieces
+        (Active Zone strategy). Returns center if board is empty.
         """
         occupied = []
         for r in range(board.size):
@@ -183,16 +218,26 @@ class SmartPlayer(Player):
 
         return moves
 
-    def order_moves(self, board: HexBoard, moves: list):
+    def order_moves(self, board: HexBoard, moves: list, prioritized_move=None):
         """
-        Move Ordering Strategy.
-        Simple heuristic:
-        1. Number of allied neighbors (connectivity).
-        2. Proximity to center.
+        Sorts moves to maximize pruning efficiency.
+        Prioritizes forcing moves (blocking), connectivity, and center proximity.
         """
         center = board.size // 2
 
+        # Priority List
+        ordered = []
+        if prioritized_move and prioritized_move in moves:
+            ordered.append(prioritized_move)
+            # Create a new list without the prioritized move to avoid modifying the original list in-place issues
+            remaining_moves = [m for m in moves if m != prioritized_move]
+        else:
+            remaining_moves = list(moves)
+
         def quick_score(move):
+            if move == prioritized_move:
+                return float("inf")
+
             r, c = move
             # Distance to center
             dist_center = abs(r - center) + abs(c - center)
@@ -208,7 +253,8 @@ class SmartPlayer(Player):
             # Score: High weight for neighbors, slight penalty for distance
             return (my_neighbors * 10) - dist_center
 
-        return sorted(moves, key=quick_score, reverse=True)
+        ordered.extend(sorted(remaining_moves, key=quick_score, reverse=True))
+        return ordered
 
     def get_possible_moves(self, board: HexBoard):
         """Returns all empty cells (fallback)"""
