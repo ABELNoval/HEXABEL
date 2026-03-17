@@ -1,5 +1,6 @@
 from board import HexBoard
 from solution import SmartPlayer
+import time
 
 
 def print_board(board: HexBoard):
@@ -29,6 +30,9 @@ def simple_game():
     player1 = SmartPlayer(1)
     player2 = SmartPlayer(2)
 
+    p1_times = []
+    p2_times = []
+
     current_player = player1
     print("Estado inicial del tablero:")
     print_board(board)
@@ -37,8 +41,21 @@ def simple_game():
     max_moves = size * size
 
     while move_count < max_moves:
+        # Measure time
+        start_time = time.time()
+
         # Llamar al play() del jugador
         move = current_player.play(board)
+
+        end_time = time.time()
+        duration = end_time - start_time
+
+        if current_player.player_id == 1:
+            p1_times.append(duration)
+        else:
+            p2_times.append(duration)
+
+        print(f"J. {current_player.player_id} tomó {duration:.4f}s")
 
         if move is None:
             print(f"Jugador {current_player.player_id} no tiene movimientos válidos.")
@@ -69,6 +86,17 @@ def simple_game():
         move_count += 1
 
     print("Juego terminado (simulación simple).")
+
+    # Calcular y mostrar promedios
+    avg_p1 = sum(p1_times) / len(p1_times) if p1_times else 0
+    avg_p2 = sum(p2_times) / len(p2_times) if p2_times else 0
+
+    print("\n" + "=" * 30)
+    print("ESTADÍSTICAS DE TIEMPO (segundos por movimiento)")
+    print("=" * 30)
+    print(f"JUGADOR 1: {avg_p1:.6f} s (Total: {sum(p1_times):.4f} s)")
+    print(f"JUGADOR 2: {avg_p2:.6f} s (Total: {sum(p2_times):.4f} s)")
+    print("=" * 30)
 
 
 if __name__ == "__main__":
