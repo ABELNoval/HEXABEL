@@ -10,20 +10,19 @@ class SmartPlayer(Player):
         self.max_time = 4.8
         self.start_time = 0
         self.timeout = False
+        self.transposition_table = {}  # TT: Stores board analysis to prune search tree
 
     def play(self, board: HexBoard) -> tuple:
         """
         Executes the game strategy using Minimax with Iterative Deepening,
-        Alpha-Beta Pruning, and strategic Move Ordering.
+        Alpha-Beta Pruning, Transposition Tables, and strategic Move Ordering.
         """
         self.start_time = time.time()
         self.timeout = False
 
-        # --- Immediate Move Analysis ---
-        # Check for immediate winning or blocking moves to avoid unnecessary search.
-        winning_move = self.find_immediate_win(board, self.player_id)
-        if winning_move:
-            return winning_move
+        # Reset TT for each turn to avoid memory overflow in long matches
+        # and to clear stale positions from previous game stages
+        self.transposition_table.clear()
 
         # Check if we must block an immediate opponent win
         opponent_id = 3 - self.player_id
@@ -142,6 +141,20 @@ class SmartPlayer(Player):
         if self.check_timeout():
             raise TimeoutError()
 
+        # --- Transposition Table Lookup ---
+        board_hash = self.get_board_hash(board)
+        if board_hash in self.transposition_table:
+            t_depth, t_flag, t_val = self.transposition_table[board_hash]
+            if t_depth >= depth:
+                if t_flag == 0:  # EXACT
+                    return t_val
+                elif t_flag == 1:  # LOWER BOUND
+                    alpha = max(alpha, t_val)
+                elif t_flag == 2:  # UPPER BOUND
+                    beta = min(beta, t_val)
+                if alpha >= beta:
+                    return t_val
+
         # Check terminal states
         if board.check_connection(self.player_id):
             return 10000.0
@@ -163,34 +176,49 @@ class SmartPlayer(Player):
         # Order moves (optional here, might be too costly)
         # moves = self.order_moves(board, moves)
 
+        alpha_original = alpha
+        best_val = float("-inf") if maximizing_player else float("inf")
+
         if maximizing_player:
-            max_eval = float("-inf")
             for move in moves:
                 sim_board = board.clone()
                 sim_board.place_piece(move[0], move[1], self.player_id)
                 eval = self.minimax(sim_board, depth - 1, False, alpha, beta)
-                max_eval = max(max_eval, eval)
+                best_val = max(best_val, eval)
                 alpha = max(alpha, eval)
                 if beta <= alpha:
                     break
-            return max_eval
         else:
-            min_eval = float("inf")
             opponent = 3 - self.player_id
             for move in moves:
                 sim_board = board.clone()
                 sim_board.place_piece(move[0], move[1], opponent)
                 eval = self.minimax(sim_board, depth - 1, True, alpha, beta)
-                min_eval = min(min_eval, eval)
+                best_val = min(best_val, eval)
                 beta = min(beta, eval)
                 if beta <= alpha:
                     break
-            return min_eval
+
+        # --- Transposition Table Store ---
+        tt_flag = 0  # EXACT
+        if best_val <= alpha_original:
+            tt_flag = 2  # UPPER
+        elif best_val >= beta:
+            tt_flag = 1  # LOWER
+
+        self.transposition_table[board_hash] = (depth, tt_flag, best_val)
+
+        return best_val
+
+    def get_board_hash(self, board: HexBoard):
+        """Creates a unique hashable representation of the board state."""
+        # Convert mutable list of lists to immutable tuple of tuples
+        return tuple(tuple(row) for row in board.board)
 
     def get_relevant_moves(self, board: HexBoard):
         """
         Generates a reduced set of candidate moves based on adjacency to existing pieces
-        (Active Zone strategy). Returns center if board is empty.
+        (Active Zone strategy). Includes direct neighbors (Distance 1) and bridge endpoints (Distance 2).
         """
         occupied = []
         for r in range(board.size):
@@ -202,17 +230,36 @@ class SmartPlayer(Player):
             return [(board.size // 2, board.size // 2)]
 
         relevant = set()
+
+        # Helper to check bounds
+        def is_valid(r, c):
+            return 0 <= r < board.size and 0 <= c < board.size
+
         for r, c in occupied:
+            # Check all neighbors (Distance 1)
+            neighbors_d1 = []
             for dr, dc in board.HEX_DIRECTIONS:
                 nr, nc = r + dr, c + dc
-                if 0 <= nr < board.size and 0 <= nc < board.size:
+                if is_valid(nr, nc):
                     if board.board[nr][nc] == 0:
                         relevant.add((nr, nc))
+                        neighbors_d1.append((nr, nc))
+
+            # Check Bridge Endpoints (Distance 2 via empty neighbor)
+            for r1, c1 in neighbors_d1:
+                # Expand from the empty neighbor
+                for dr, dc in board.HEX_DIRECTIONS:
+                    r2, c2 = r1 + dr, c1 + dc
+                    if is_valid(r2, c2) and board.board[r2][c2] == 0:
+                        # Avoid adding the original piece or its direct neighbors again
+                        # (though set handles duplicates, we want strictly Distance 2 or non-adjacent)
+                        # Minimal check: just add, set handles it.
+                        relevant.add((r2, c2))
 
         # Convert to list
         moves = list(relevant)
 
-        # Fallback: If no adjacent moves, return all possible moves
+        # Fallback: If no moves found, return all possible
         if not moves:
             return self.get_possible_moves(board)
 
@@ -267,73 +314,113 @@ class SmartPlayer(Player):
 
     def evaluate_board(self, board: HexBoard) -> float:
         """
-        Dijkstra-based heuristic:
-        Returns: opponent_distance - my_distance
+        Advanced Heuristic (Fase 3): Two-Path Robustness
+        Instead of just one path, we evaluate the cost of a secondary disjoint path.
+        Formula: (Opponent_Path1 + Opponent_Path2) - (My_Path1 + My_Path2)
         """
-        my_dist = self.calculate_distance(board, self.player_id)
-        opponent_id = 3 - self.player_id
-        op_dist = self.calculate_distance(board, opponent_id)
+        # Calculate Primary Paths
+        my_dist_1, my_path_1 = self.calculate_distance(board, self.player_id)
+        op_dist_1, op_path_1 = self.calculate_distance(board, 3 - self.player_id)
 
-        return op_dist - my_dist
+        # Calculate Secondary Paths (avoiding the primary path nodes)
+        # We pass the primary path set to be treated as high-cost obstacles
+        my_dist_2, _ = self.calculate_distance(
+            board, self.player_id, avoid_nodes=my_path_1
+        )
+        op_dist_2, _ = self.calculate_distance(
+            board, 3 - self.player_id, avoid_nodes=op_path_1
+        )
 
-    def calculate_distance(self, board: HexBoard, player_id: int) -> float:
+        # Weighting: Primary path is most important, secondary provides security.
+        # If secondary path is infinite (blocked), the score should reflect vulnerability.
+
+        my_score = my_dist_1 * 1.5 + my_dist_2 * 0.5
+        op_score = op_dist_1 * 1.5 + op_dist_2 * 0.5
+
+        return op_score - my_score
+
+    def calculate_distance(
+        self, board: HexBoard, player_id: int, avoid_nodes=None
+    ) -> tuple:
         """
-        Calculates the shortest path distance to connect the player's sides.
-        Weights:
-        - Own cell: 0
-        - Empty cell: 1
-        - Opponent cell: 100 (high cost but passable)
+        Dijkstra's Algorithm to find shortest path cost.
+        Returns (cost, method_used_path_set).
         """
+        if avoid_nodes is None:
+            avoid_nodes = set()
+
         size = board.size
         # Priority Queue: (cost, r, c)
         pq = []
-        # Min Distances Matrix initialized to infinity
-        dists = [[float("inf") for _ in range(size)] for _ in range(size)]
+        dists = {}  # Sparse dictionary for visited nodes
 
         # Directions for neighbors
         directions = board.HEX_DIRECTIONS
 
-        # Initialize PQ with starting edge cells
-        if player_id == 1:  # Left to Right (Start at Col 0)
+        # Initial set up based on player direction
+        # Player 1: Left-Right (Col 0 to Size-1)
+        # Player 2: Top-Bottom (Row 0 to Size-1)
+
+        # Initialize PQ
+        if player_id == 1:  # Left -> Right
             for r in range(size):
-                cost = self.get_cell_cost(board.board[r][0], player_id)
-                dists[r][0] = cost
-                heapq.heappush(pq, (cost, r, 0))
-        else:  # Top to Bottom (Start at Row 0)
+                cell_cost = self.get_cell_cost(
+                    board.board[r][0], player_id, (r, 0) in avoid_nodes
+                )
+                heapq.heappush(pq, (cell_cost, r, 0))
+                dists[(r, 0)] = cell_cost
+        else:  # Top -> Bottom
             for c in range(size):
-                cost = self.get_cell_cost(board.board[0][c], player_id)
-                dists[0][c] = cost
-                heapq.heappush(pq, (cost, 0, c))
+                cell_cost = self.get_cell_cost(
+                    board.board[0][c], player_id, (0, c) in avoid_nodes
+                )
+                heapq.heappush(pq, (cell_cost, 0, c))
+                dists[(0, c)] = cell_cost
+
+        parent_map = {}  # To reconstruct path
 
         while pq:
             current_cost, r, c = heapq.heappop(pq)
 
-            # If we found a shorter path before, ignore
-            if current_cost > dists[r][c]:
+            # Pruning
+            if current_cost > dists.get((r, c), float("inf")):
                 continue
 
-            # Check if we reached the target edge
-            if player_id == 1 and c == size - 1:
-                return current_cost
-            if player_id == 2 and r == size - 1:
-                return current_cost
+            # Check Reached Target
+            if (player_id == 1 and c == size - 1) or (player_id == 2 and r == size - 1):
+                path = set()
+                curr = (r, c)
+                while curr in parent_map:
+                    path.add(curr)
+                    curr = parent_map[curr]
+                path.add(curr)
+                return current_cost, path
 
-            # Explore neighbors
+            # Neighbors
             for dr, dc in directions:
                 nr, nc = r + dr, c + dc
                 if 0 <= nr < size and 0 <= nc < size:
-                    move_cost = self.get_cell_cost(board.board[nr][nc], player_id)
-                    new_cost = current_cost + move_cost
-                    if new_cost < dists[nr][nc]:
-                        dists[nr][nc] = new_cost
+                    new_cost = current_cost + self.get_cell_cost(
+                        board.board[nr][nc], player_id, (nr, nc) in avoid_nodes
+                    )
+
+                    if new_cost < dists.get((nr, nc), float("inf")):
+                        dists[(nr, nc)] = new_cost
+                        parent_map[(nr, nc)] = (r, c)
                         heapq.heappush(pq, (new_cost, nr, nc))
 
-        return float("inf")
+        return 9999, set()  # No path found
 
-    def get_cell_cost(self, cell_value: int, player_id: int) -> int:
+    def get_cell_cost(self, cell_value, player_id, is_avoided=False):
+        """
+        Determines the traversal cost of a cell.
+        """
+        if is_avoided:
+            return 50  # High penalty but passable if desperate
+
         if cell_value == player_id:
-            return 0
+            return 0  # Existing connection
         elif cell_value == 0:
-            return 1
+            return 1  # Empty cell (needs 1 move)
         else:
-            return 100  # High cost for opponent cells
+            return 100  # Opponent block (effectively infinite)
