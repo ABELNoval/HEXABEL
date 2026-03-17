@@ -9,7 +9,7 @@ class SmartPlayer(Player):
 
     def play(self, board: HexBoard) -> tuple:
         """
-        Decides the move using Minimax with depth 3.
+        Decides the move using Minimax with Alpha-Beta pruning (depth 3).
         """
         possible_moves = self.get_possible_moves(board)
         if not possible_moves:
@@ -18,24 +18,36 @@ class SmartPlayer(Player):
         # Start Minimax search
         best_move = None
         best_value = float("-inf")
+        alpha = float("-inf")
+        beta = float("inf")
 
-        # Depth 3: Current move (max) -> Opponent (min) -> Me (max) -> Evaluate
-        # We call minimax with depth=2 beacuse the current loop is the first level.
         for move in possible_moves:
             # Simulate move
             sim_board = board.clone()
             sim_board.place_piece(move[0], move[1], self.player_id)
 
-            # Call minimax for the opponent (minimizing step)
-            val = self.minimax(sim_board, depth=2, maximizing_player=False)
+            # Call minimax with alpha-beta parameters
+            val = self.minimax(
+                sim_board, depth=2, maximizing_player=False, alpha=alpha, beta=beta
+            )
 
             if val > best_value:
                 best_value = val
                 best_move = move
 
+            # Update alpha for the root level
+            alpha = max(alpha, best_value)
+
         return best_move
 
-    def minimax(self, board: HexBoard, depth: int, maximizing_player: bool) -> float:
+    def minimax(
+        self,
+        board: HexBoard,
+        depth: int,
+        maximizing_player: bool,
+        alpha: float,
+        beta: float,
+    ) -> float:
         # Check terminal states (Win/Loss)
         if board.check_connection(self.player_id):
             return 1000.0
@@ -54,8 +66,11 @@ class SmartPlayer(Player):
             for move in possible_moves:
                 sim_board = board.clone()
                 sim_board.place_piece(move[0], move[1], self.player_id)
-                eval = self.minimax(sim_board, depth - 1, False)
+                eval = self.minimax(sim_board, depth - 1, False, alpha, beta)
                 max_eval = max(max_eval, eval)
+                alpha = max(alpha, eval)
+                if beta <= alpha:
+                    break
             return max_eval
         else:
             min_eval = float("inf")
@@ -63,8 +78,11 @@ class SmartPlayer(Player):
             for move in possible_moves:
                 sim_board = board.clone()
                 sim_board.place_piece(move[0], move[1], opponent)
-                eval = self.minimax(sim_board, depth - 1, True)
+                eval = self.minimax(sim_board, depth - 1, True, alpha, beta)
                 min_eval = min(min_eval, eval)
+                beta = min(beta, eval)
+                if beta <= alpha:
+                    break
             return min_eval
 
     def evaluate_board(self, board: HexBoard) -> float:
