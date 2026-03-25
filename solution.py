@@ -30,6 +30,10 @@ class SmartPlayer(Player):
         # Reset Killer Moves
         self.killer_moves = [[None] * 2 for _ in range(100)]
 
+        # Opening Move Optimization
+        if self.is_board_empty(board):
+            return (board.size // 2, board.size // 2)
+
         # Check for immediate winning move first (highest priority)
         winning_move = self.find_immediate_win(board, self.player_id)
         if winning_move:
@@ -41,8 +45,8 @@ class SmartPlayer(Player):
 
         # --- Move Generation & Reduction ---
         possible_moves = self.get_relevant_moves(board)
-        # if not possible_moves:
-        #     possible_moves = self.get_possible_moves(board)
+        if not possible_moves:
+            possible_moves = self.get_possible_moves(board)
 
         if not possible_moves:
             return None
@@ -324,9 +328,6 @@ class SmartPlayer(Player):
                 if board.board[r][c] != 0:
                     occupied.append((r, c))
 
-        if not occupied:
-            return [(board.size // 2, board.size // 2)]
-
         relevant = set()
 
         # Helper to check bounds
@@ -356,10 +357,6 @@ class SmartPlayer(Player):
 
         # Convert to list
         moves = list(relevant)
-
-        # Fallback: If no moves found, return all possible
-        if not moves:
-            return self.get_possible_moves(board)
 
         return moves
 
@@ -522,3 +519,10 @@ class SmartPlayer(Player):
             return 1  # Empty cell (needs 1 move)
         else:
             return 100  # Opponent block (effectively infinite)
+
+    def is_board_empty(self, board):
+        for row in board.board:
+            for cell in row:
+                if cell != 0:
+                    return False
+        return True
