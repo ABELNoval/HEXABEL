@@ -97,16 +97,9 @@ class SmartPlayer(Player):
         for r in range(board.size):
             for c in range(board.size):
                 if board.board[r][c] == 0:
-                    empty_cells.append(
-                        (r, c)
-                    )  # Could optimize using get_relevant_moves
-
-        # Optimization: Only check relevant empty cells if board is large
-        # For 7x7, checking all empties is fast enough.
+                    empty_cells.append((r, c))
 
         for r, c in empty_cells:
-            # We don't clone the board fully to speed up;
-            # we place, check, and unplace (backtrack).
             board.board[r][c] = player_id
             if board.check_connection(player_id):
                 board.board[r][c] = 0  # Undo
