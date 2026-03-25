@@ -42,6 +42,8 @@ class SmartPlayer(Player):
         # Check if we must block an immediate opponent win
         opponent_id = 3 - self.player_id
         blocking_move = self.find_immediate_win(board, opponent_id)
+        if blocking_move:
+            return blocking_move
 
         # --- Move Generation & Reduction ---
         possible_moves = self.get_relevant_moves(board)
