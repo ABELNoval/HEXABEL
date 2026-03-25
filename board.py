@@ -1,12 +1,10 @@
 class HexBoard:
-    HEX_DIRECTIONS = [
-        (-1, 0),  # arriba
-        (-1, 1),  # arriba-derecha
-        (0, -1),  # izquierda
-        (0, 1),  # derecha
-        (1, -1),  # abajo-izquierda
-        (1, 0),  # abajo
-    ]
+    # even-r layout (row offset): directions depend on row parity
+    EVEN_ROW_DIRECTIONS = [(-1, 0), (-1, 1), (0, -1), (0, 1), (1, 0), (1, 1)]
+    ODD_ROW_DIRECTIONS = [(-1, -1), (-1, 0), (0, -1), (0, 1), (1, -1), (1, 0)]
+
+    # Kept for backward compatibility with older code paths.
+    HEX_DIRECTIONS = EVEN_ROW_DIRECTIONS
 
     def __init__(self, size: int):
         self.size = size
@@ -39,7 +37,7 @@ class HexBoard:
             if player_id == 2 and r == self.size - 1:  # jugador 2: arriba -> abajo
                 return True
 
-            for dr, dc in self.HEX_DIRECTIONS:
+            for dr, dc in self.get_row_directions(r):
                 nr, nc = r + dr, c + dc
                 if 0 <= nr < self.size and 0 <= nc < self.size:
                     if dfs(nr, nc):
@@ -55,3 +53,8 @@ class HexBoard:
                 if self.board[0][c] == player_id and dfs(0, c):
                     return True
         return False
+
+    def get_row_directions(self, row: int):
+        if row % 2 == 0:
+            return self.EVEN_ROW_DIRECTIONS
+        return self.ODD_ROW_DIRECTIONS
