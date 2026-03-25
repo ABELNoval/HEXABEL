@@ -30,14 +30,19 @@ class SmartPlayer(Player):
         # Reset Killer Moves
         self.killer_moves = [[None] * 2 for _ in range(100)]
 
+        # Check for immediate winning move first (highest priority)
+        winning_move = self.find_immediate_win(board, self.player_id)
+        if winning_move:
+            return winning_move
+
         # Check if we must block an immediate opponent win
         opponent_id = 3 - self.player_id
         blocking_move = self.find_immediate_win(board, opponent_id)
 
         # --- Move Generation & Reduction ---
         possible_moves = self.get_relevant_moves(board)
-        if not possible_moves:
-            possible_moves = self.get_possible_moves(board)
+        # if not possible_moves:
+        #     possible_moves = self.get_possible_moves(board)
 
         if not possible_moves:
             return None
