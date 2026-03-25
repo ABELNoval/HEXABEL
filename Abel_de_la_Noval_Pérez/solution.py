@@ -214,7 +214,7 @@ class SmartPlayer(Player):
                 do_lmr = False
                 if depth > 3 and i > 4 and best_val > float("-inf"):
                     is_promising = False
-                    for dr, dc in board.HEX_DIRECTIONS:
+                    for dr, dc in board.get_row_directions(move[0]):
                         nr, nc = move[0] + dr, move[1] + dc
                         if 0 <= nr < board.size and 0 <= nc < board.size:
                             # Check if ANY piece is neighbor (tactical/blocking)
@@ -254,7 +254,7 @@ class SmartPlayer(Player):
                 do_lmr = False
                 if depth > 3 and i > 4 and best_val < float("inf"):
                     is_promising = False
-                    for dr, dc in board.HEX_DIRECTIONS:
+                    for dr, dc in board.get_row_directions(move[0]):
                         nr, nc = move[0] + dr, move[1] + dc
                         if 0 <= nr < board.size and 0 <= nc < board.size:
                             if board.board[nr][nc] != 0:
@@ -328,7 +328,7 @@ class SmartPlayer(Player):
         for r, c in occupied:
             # Check all neighbors (Distance 1)
             neighbors_d1 = []
-            for dr, dc in board.HEX_DIRECTIONS:
+            for dr, dc in board.get_row_directions(r):
                 nr, nc = r + dr, c + dc
                 if is_valid(nr, nc):
                     if board.board[nr][nc] == 0:
@@ -338,7 +338,7 @@ class SmartPlayer(Player):
             # Check Bridge Endpoints (Distance 2 via empty neighbor)
             for r1, c1 in neighbors_d1:
                 # Expand from the empty neighbor
-                for dr, dc in board.HEX_DIRECTIONS:
+                for dr, dc in board.get_row_directions(r1):
                     r2, c2 = r1 + dr, c1 + dc
                     if is_valid(r2, c2) and board.board[r2][c2] == 0:
                         # Avoid adding the original piece or its direct neighbors again
@@ -365,7 +365,7 @@ class SmartPlayer(Player):
 
             # Allied neighbors
             my_neighbors = 0
-            for dr, dc in board.HEX_DIRECTIONS:
+            for dr, dc in board.get_row_directions(r):
                 nr, nc = r + dr, c + dc
                 if 0 <= nr < board.size and 0 <= nc < board.size:
                     if board.board[nr][nc] == self.player_id:
@@ -427,9 +427,6 @@ class SmartPlayer(Player):
         pq = []
         dists = {}  # Sparse dictionary for visited nodes
 
-        # Directions for neighbors
-        directions = board.HEX_DIRECTIONS
-
         # Initial set up based on player direction
         # Player 1: Left-Right (Col 0 to Size-1)
         # Player 2: Top-Bottom (Row 0 to Size-1)
@@ -470,7 +467,7 @@ class SmartPlayer(Player):
                 return current_cost, path
 
             # Neighbors
-            for dr, dc in directions:
+            for dr, dc in board.get_row_directions(r):
                 nr, nc = r + dr, c + dc
                 if 0 <= nr < size and 0 <= nc < size:
                     new_cost = current_cost + self.get_cell_cost(
