@@ -1,5 +1,5 @@
 from board import HexBoard
-from solution import SmartPlayer
+from Abel_de_la_Noval_Pérez.solution import SmartPlayer
 import time
 
 
@@ -23,7 +23,7 @@ def print_board(board: HexBoard):
 
 
 def simple_game():
-    size = 7  # tamaño del tablero para testeo
+    size = 6  # tamaño del tablero para testeo
     board = HexBoard(size)
 
     # Crear dos jugadores
