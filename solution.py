@@ -55,7 +55,7 @@ class SmartPlayer(Player):
 
         # --- Move Ordering ---
         # Prioritize blocking move if found to guide the search
-        possible_moves = self.order_moves(board, possible_moves, blocking_move)
+        possible_moves = self.order_moves(board, possible_moves)
 
         best_move = possible_moves[0]
 
@@ -362,26 +362,14 @@ class SmartPlayer(Player):
 
         return moves
 
-    def order_moves(self, board: HexBoard, moves: list, prioritized_move=None):
+    def order_moves(self, board: HexBoard, moves: list):
         """
         Sorts moves to maximize pruning efficiency.
         Prioritizes forcing moves (blocking), connectivity, and center proximity.
         """
         center = board.size // 2
 
-        # Priority List
-        ordered = []
-        if prioritized_move and prioritized_move in moves:
-            ordered.append(prioritized_move)
-            # Create a new list without the prioritized move to avoid modifying the original list in-place issues
-            remaining_moves = [m for m in moves if m != prioritized_move]
-        else:
-            remaining_moves = list(moves)
-
         def quick_score(move):
-            if move == prioritized_move:
-                return float("inf")
-
             r, c = move
             # Distance to center
             dist_center = abs(r - center) + abs(c - center)
@@ -397,8 +385,7 @@ class SmartPlayer(Player):
             # Score: High weight for neighbors, slight penalty for distance
             return (my_neighbors * 10) - dist_center
 
-        ordered.extend(sorted(remaining_moves, key=quick_score, reverse=True))
-        return ordered
+        return sorted(moves, key=quick_score, reverse=True)
 
     def get_possible_moves(self, board: HexBoard):
         """Returns all empty cells (fallback)"""
