@@ -1,18 +1,10 @@
 class HexBoard:
-    HEX_DIRECTIONS = [
-        (-1, 0),
-        (-1, 1),
-        (0, -1),
-        (0, 1),
-        (1, -1),
-        (1, 0),
-    ]
-
     def __init__(self, size: int):
         self.size = size
         self.board = [
             [0 for _ in range(size)] for _ in range(size)
         ]  # 0 = vacío, 1 = jugador1, 2 = jugador2
+        self.HEX_DIRECTIONS = self.init_hex_directions()
 
     def clone(self):
         new_board = HexBoard(self.size)
@@ -55,3 +47,14 @@ class HexBoard:
                 if self.board[0][c] == player_id and dfs(0, c):
                     return True
         return False
+
+    def init_hex_directions(self):
+        # General neighbor list for odd/even row layouts (axial-offset style)
+        directions = []
+        if self.size % 2 == 0:
+            # Even-sized board -> adjusted neighbor offsets
+            directions = [(-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0)]
+        else:
+            # Odd-sized board -> standard neighbor offsets
+            directions = [(-1, 0), (-1, 1), (0, -1), (0, 1), (1, 0), (1, 1)]
+        return directions

@@ -200,11 +200,7 @@ class SmartPlayer(Player):
 
         if depth < 100:
             killers = self.killer_moves[depth]
-            # Efficiently move killers to front if valid
-            # In Python, sorting is O(N log N), but N is small (relevant moves ~10-20).
-            # We use a key to push killers to the top.
             valid_killers = [k for k in killers if k in moves]
-            # Use a set for faster lookup in filtering
             vk_set = set(valid_killers)
             other_moves = [m for m in moves if m not in vk_set]
             moves = valid_killers + other_moves
