@@ -89,19 +89,25 @@ class SmartPlayer(Player):
         return best_move
 
     def find_immediate_win(self, board: HexBoard, player_id: int):
-        """Checks if placing a piece in any valid spot creates a connection."""
-        empty_cells = []
-        for r in range(board.size):
-            for c in range(board.size):
-                if board.board[r][c] == 0:
-                    empty_cells.append((r, c))
+        """
+        Checks for an immediate win for the current player or the opponent.
+        """
 
-        for r, c in empty_cells:
+        # Get relevant moves instead of all empty cells
+        possible_moves = self.get_relevant_moves(board)
+
+        for r, c in possible_moves:
+            # Temporarily make the move
             board.board[r][c] = player_id
+
+            # Check if this move results in a win
             if board.check_connection(player_id):
-                board.board[r][c] = 0  # Undo
+                # Revert the move
+                board.board[r][c] = 0
                 return (r, c)
-            board.board[r][c] = 0  # Undo
+
+            # Revert the move
+            board.board[r][c] = 0
 
         return None
 
@@ -187,10 +193,7 @@ class SmartPlayer(Player):
         # Generate relevant moves for this state
         moves = self.get_relevant_moves(board)
         if not moves:
-            # Fallback to all possible moves if local search fails
-            moves = self.get_possible_moves(board)
-            if not moves:
-                return self.evaluate_board(board)
+            return self.evaluate_board(board)
 
         # Order moves (optional here, might be too costly)
         # moves = self.order_moves(board, moves)
