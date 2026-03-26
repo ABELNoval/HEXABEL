@@ -47,14 +47,11 @@ class SmartPlayer(Player):
 
         # --- Move Generation & Reduction ---
         possible_moves = self.get_relevant_moves(board)
-        if not possible_moves:
-            possible_moves = self.get_possible_moves(board)
 
         if not possible_moves:
             return None
 
         # --- Move Ordering ---
-        # Prioritize blocking move if found to guide the search
         possible_moves = self.order_moves(board, possible_moves)
 
         best_move = possible_moves[0]
@@ -206,6 +203,7 @@ class SmartPlayer(Player):
             moves = valid_killers + other_moves
 
         alpha_original = alpha
+        beta_original = beta
         best_val = float("-inf") if maximizing_player else float("inf")
 
         if maximizing_player:
@@ -290,7 +288,7 @@ class SmartPlayer(Player):
         tt_flag = 0  # EXACT
         if best_val <= alpha_original:
             tt_flag = 2  # UPPER
-        elif best_val >= beta:
+        elif best_val >= beta_original:
             tt_flag = 1  # LOWER
 
         self.transposition_table[board_hash] = (depth, tt_flag, best_val)
@@ -310,8 +308,8 @@ class SmartPlayer(Player):
 
     def get_relevant_moves(self, board: HexBoard):
         """
-        Generates a reduced set of candidate moves based on adjacency to existing pieces
-        (Active Zone strategy). Includes direct neighbors (Distance 1) and bridge endpoints (Distance 2).
+        Generates candidate moves from the active zone.
+        Uses direct neighbors (Distance 1) by default and expands to Distance 2 only when needed.
         """
         occupied = []
         for r in range(board.size):
@@ -319,7 +317,11 @@ class SmartPlayer(Player):
                 if board.board[r][c] != 0:
                     occupied.append((r, c))
 
-        relevant = set()
+        if not occupied:
+            return self.get_possible_moves(board)
+
+        relevant_d1 = set()
+        neighbors_d1_by_piece = {}
 
         # Helper to check bounds
         def is_valid(r, c):
@@ -332,18 +334,27 @@ class SmartPlayer(Player):
                 nr, nc = r + dr, c + dc
                 if is_valid(nr, nc):
                     if board.board[nr][nc] == 0:
-                        relevant.add((nr, nc))
+                        relevant_d1.add((nr, nc))
                         neighbors_d1.append((nr, nc))
+            neighbors_d1_by_piece[(r, c)] = neighbors_d1
 
+        moves = list(relevant_d1)
+
+        # Controlled fallback: add Distance 2 only if Distance 1 produced too few options.
+        min_active_moves = min(8, board.size * 2)
+        if len(moves) >= min_active_moves:
+            return moves
+
+        relevant = set(relevant_d1)
+
+        for r, c in occupied:
             # Check Bridge Endpoints (Distance 2 via empty neighbor)
+            neighbors_d1 = neighbors_d1_by_piece[(r, c)]
             for r1, c1 in neighbors_d1:
                 # Expand from the empty neighbor
                 for dr, dc in board.get_row_directions(r1):
                     r2, c2 = r1 + dr, c1 + dc
                     if is_valid(r2, c2) and board.board[r2][c2] == 0:
-                        # Avoid adding the original piece or its direct neighbors again
-                        # (though set handles duplicates, we want strictly Distance 2 or non-adjacent)
-                        # Minimal check: just add, set handles it.
                         relevant.add((r2, c2))
 
         # Convert to list
@@ -363,16 +374,21 @@ class SmartPlayer(Player):
             # Distance to center
             dist_center = abs(r - center) + abs(c - center)
 
-            # Allied neighbors
+            # Allied and opponent neighbors
             my_neighbors = 0
+            op_neighbors = 0
+            opponent_id = 3 - self.player_id
             for dr, dc in board.get_row_directions(r):
                 nr, nc = r + dr, c + dc
                 if 0 <= nr < board.size and 0 <= nc < board.size:
                     if board.board[nr][nc] == self.player_id:
                         my_neighbors += 1
+                    elif board.board[nr][nc] == opponent_id:
+                        op_neighbors += 1
 
-            # Score: High weight for neighbors, slight penalty for distance
-            return (my_neighbors * 10) - dist_center
+            # Score: High weight for building our bridges and blocking opponent's.
+            # Slight penalty for distance from center.
+            return (my_neighbors * 10) + (op_neighbors * 10) - dist_center
 
         return sorted(moves, key=quick_score, reverse=True)
 
